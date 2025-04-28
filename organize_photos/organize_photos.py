@@ -6,19 +6,17 @@ This script organizes image files from a source directory (and its subdirectorie
 into a target directory with the structure year/month/day based on the image creation date.
 Creation date is extracted from EXIF data if available, otherwise file modification time is used.
 
-Usage:
-    python organize_photos.py /path/to/source /path/to/target [options]
-
-Options:
-    --copy          Copy files instead of moving them
-    --dry-run       Simulate the organization without modifying any files
-    --progress      Show a progress bar during processing
+The script will prompt for:
+- Source directory containing images
+- Target directory for organized images
+- Whether to copy or move files
+- Whether to run in simulation mode
+- Whether to show a progress bar
 """
 
 import os
 import sys
 import shutil
-import argparse
 import datetime
 import exifread
 from pathlib import Path
@@ -46,44 +44,84 @@ IMAGE_EXTENSIONS = {
 }
 
 
-def parse_arguments():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Organize photos into directories based on their creation date.'
-    )
-    parser.add_argument('source', help='Source directory containing images')
-    parser.add_argument('target', help='Target directory for organized images')
-    parser.add_argument('--copy', action='store_true', help='Copy files instead of moving them')
-    parser.add_argument('--dry-run', action='store_true', help='Simulate without modifying files')
-    parser.add_argument('--progress', action='store_true', help='Show progress bar')
+def get_user_input():
+    """Prompt user for source and target directories and options."""
+    print("\n=== Photo Organizer ===")
+    print("This script organizes photos by date based on EXIF data or file modification time.\n")
     
-    args = parser.parse_args()
+    # Get source directory
+    while True:
+        source_dir = input("Enter source directory path: ").strip()
+        source_path = Path(source_dir)
+        
+        if not source_path.exists():
+            print(f"Error: Source directory does not exist: {source_path}")
+            continue
+        
+        if not source_path.is_dir():
+            print(f"Error: Source path is not a directory: {source_path}")
+            continue
+        
+        break
     
-    # Validate directories
-    source_path = Path(args.source)
-    target_path = Path(args.target)
+    # Get target directory
+    while True:
+        target_dir = input("Enter target directory path: ").strip()
+        target_path = Path(target_dir)
+        
+        # Create target directory if it doesn't exist
+        if not target_path.exists():
+            try:
+                create_now = input("Target directory doesn't exist. Create it now? (y/n): ").strip().lower()
+                if create_now == 'y':
+                    target_path.mkdir(parents=True)
+                    print(f"Created target directory: {target_path}")
+                else:
+                    print("Please enter a different target directory path.")
+                    continue
+            except Exception as e:
+                print(f"Error: Failed to create target directory: {e}")
+                continue
+        
+        # Check if target is a subdirectory of source to avoid traversal issues
+        if target_path.resolve().is_relative_to(source_path.resolve()):
+            print("Error: Target directory cannot be a subdirectory of the source directory")
+            continue
+        
+        break
     
-    if not source_path.exists():
-        logger.error(f"Source directory does not exist: {source_path}")
-        sys.exit(1)
+    # Get options
+    copy_option = input("Copy files instead of moving them? (y/n): ").strip().lower() == 'y'
+    dry_run_option = input("Simulate without actually moving/copying files? (y/n): ").strip().lower() == 'y'
+    progress_option = False
     
-    if not source_path.is_dir():
-        logger.error(f"Source path is not a directory: {source_path}")
-        sys.exit(1)
+    if TQDM_AVAILABLE:
+        progress_option = input("Show progress bar during processing? (y/n): ").strip().lower() == 'y'
     
-    # Create target directory if it doesn't exist
-    if not target_path.exists() and not args.dry_run:
-        try:
-            target_path.mkdir(parents=True)
-            logger.info(f"Created target directory: {target_path}")
-        except Exception as e:
-            logger.error(f"Failed to create target directory: {e}")
-            sys.exit(1)
+    # Create a class-like object to mimic the args structure
+    class Args:
+        pass
     
-    # Check if target is a subdirectory of source to avoid traversal issues
-    if target_path.resolve().is_relative_to(source_path.resolve()):
-        logger.error("Target directory cannot be a subdirectory of the source directory")
-        sys.exit(1)
+    args = Args()
+    args.source = source_dir
+    args.target = target_dir
+    args.copy = copy_option
+    args.dry_run = dry_run_option
+    args.progress = progress_option
+    
+    # Print a summary of the options
+    print("\n=== Summary of options ===")
+    print(f"Source directory: {args.source}")
+    print(f"Target directory: {args.target}")
+    print(f"Operation: {'Copy' if args.copy else 'Move'} files")
+    print(f"Mode: {'Simulation (dry run)' if args.dry_run else 'Actual file operation'}")
+    print(f"Progress bar: {'Enabled' if args.progress and TQDM_AVAILABLE else 'Disabled'}")
+    
+    # Final confirmation
+    confirm = input("\nProceed with these options? (y/n): ").strip().lower()
+    if confirm != 'y':
+        print("Operation canceled by user.")
+        sys.exit(0)
     
     return args
 
@@ -247,7 +285,7 @@ def process_file(file_path, target_dir, copy=False, dry_run=False):
 
 def main():
     """Main function to organize photos."""
-    args = parse_arguments()
+    args = get_user_input()
     
     source_dir = Path(args.source)
     target_dir = Path(args.target)
